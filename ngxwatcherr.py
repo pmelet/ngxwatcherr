@@ -338,7 +338,7 @@ if __name__ == '__main__':
 	parser.add_argument('--input', '-f', 
 		                dest='filename', 
 		                action='store',
-	                    default="/var/log/nginx-error.log",
+	                    default="/var/log/nginx/error.log",
 	                    help='input file to parse')
 	parser.add_argument('--freq', '-s', 
 		                dest='freq', 
