@@ -303,8 +303,7 @@ def close_display(signal=None, frame=None, error=None):
 	sys.exit(0)
 
 
-def update_display():
-	offset = timedelta(hours=2)
+def update_display(displays, offset):
 	for display in displays:
 		stat = display["stat"]	
 		data = []
@@ -321,8 +320,8 @@ def update_display():
 def new_data_arrived():
 	errors_stats.clear()
 
-def open_file(f, sleep):
-	for line in follow(f, sleep, update_display, new_data_arrived):
+def open_file(f, displays, sleep, offset):
+	for line in follow(f, sleep, lambda:update_display(displays, offset), new_data_arrived):
 		line = line.strip()
 		(time, etype, _, _, pline) = re.match(ERRORS_RE,line).groups()
 		pline = re.split("\s*,\s*",pline.strip())
@@ -378,8 +377,9 @@ if __name__ == '__main__':
 		if os.path.exists(args.filename):
 			init_display(displays)
 			try:	
+				offset = timedelta(hours=0)
 				errors = open(args.filename)
-				open_file(errors, 0.5)
+				open_file(errors, displays, 0.5, offset)
 			except Exception as e:
 				close_display(error=e)
 		else:
