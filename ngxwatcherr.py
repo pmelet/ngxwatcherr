@@ -10,10 +10,10 @@ def follow(thefile, sleep=1, after=None, before=None):
 	while True:
 		line = thefile.readline()
 		if not line: 
-			time.sleep(sleep)
 			if after and new_data:
 				after()
 			new_data = False
+			time.sleep(sleep)
 		else: 
 			if before and not new_data:
 				# callback before data arrives
@@ -360,16 +360,26 @@ def update_display(displays, offset):
 def new_data_arrived():
 	errors_stats.clear()
 
-def open_file(f, displays, sleep, offset):
-	for line in follow(f, sleep, lambda:update_display(displays, offset), new_data_arrived):
-		line = line.strip()
-		(time, etype, _, _, pline) = re.match(ERRORS_RE,line).groups()
-		pline = re.split("\s*,\s*",pline.strip())
-		options = dict(map(lambda x:x.groups(),
-		                   filter(lambda x:x is not None,
-		                          [re.match("([a-z]+)\s*:\s*\"?(.+)\"?\s*",x) for x in pline])))
+def treat_one_line(line, displays):
+	line = line.strip()
+	(time, etype, _, _, pline) = re.match(ERRORS_RE,line).groups()
+	pline = re.split("\s*,\s*",pline.strip())
+	options = dict(map(lambda x:x.groups(),
+	                   filter(lambda x:x is not None,
+	                          [re.match("([a-z]+)\s*:\s*\"?(.+)\"?\s*",x) for x in pline])))
 
-		add_stats(pline[0], datetime.strptime(time,"%Y/%m/%d %H:%M:%S"), options)
+	add_stats(pline[0], datetime.strptime(time,"%Y/%m/%d %H:%M:%S"), options)
+
+def follow_log_file(f, displays, sleep, offset):
+	for line in follow(f, 
+		               sleep, 
+		               lambda:update_display(displays, offset), 
+		               new_data_arrived):
+		treat_one_line(line, displays)
+
+def parse_log_file(f, displays, sleep, offset):
+	for line in f.readlines():
+		treat_one_line(line, displays)
 
 timedesc = [
 	{ "re" : "([-+0-9]+)s[a-z]*", "number": 1, "arg": "seconds" },
@@ -411,22 +421,24 @@ def parse_arguments(args):
 	if args.period:
 		period = max(args.period, period)
 
-	filename = None
-	if args.filename and os.path.exists(args.filename):
-		filename = args.filename
+	filenames = []
+	if args.filenames:
+		for filename in args.filenames:
+			if os.path.exists(filename):
+				filenames.append(filename)
 	else:
-		print >>sys.stderr, "File", args.filename, "does not exist"
+		print >>sys.stderr, "File", args.filenames, "does not exist"
 
-	return displays, filename, period, offset
+	return displays, filenames, period, offset
 
 if __name__ == '__main__':
 
 	import argparse
 	parser = argparse.ArgumentParser(description='Parse nginx error logs')
 	parser.add_argument('--input', '-f', 
-		                dest='filename', 
-		                action='store',
-	                    default="/var/log/nginx/error.log",
+		                dest='filenames', 
+		                action='append',
+	                    default=[],
 	                    help='input file to parse. All are parsed, but only the last one is followed.')
 	parser.add_argument('--period', '-s', 
 		                dest='period', 
@@ -453,15 +465,19 @@ if __name__ == '__main__':
                                 "spec" is a time (1m, 10m, 1h), and is the time range or granularity of the stat''')
 
 	args = parser.parse_args()
+	print >>sys.stderr, args
 
-	displays, filename, period, offset = parse_arguments(args)
-	print >>sys.stderr, filename, period, offset
+	displays, filenames, period, offset = parse_arguments(args)
+	print >>sys.stderr, filenames, period, offset
 
-	if filename:
+	if len(filenames):
 		init_display(displays)
-		try:	
-			errors = open(args.filename)
-			open_file(errors, displays, period, offset)
+		try:
+			for filename in filenames[:-1]:
+				errors = open(filename)
+				parse_log_file(errors, displays, period, offset)
+			errors = open(filenames[-1])
+			follow_log_file(errors, displays, period, offset)
 		except Exception as e:
 			close_display(error=e)
 
