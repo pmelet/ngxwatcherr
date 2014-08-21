@@ -357,7 +357,7 @@ def update_display(displays, offset):
 		stats = errors_stats[stat]
 		if stats:
 			if stat_type == 'histogram':
-				if "re" in display:
+				if display.get("re"):
 					display["window"].setTitle("%s / %s (each %s)" % (stat, display.get("re"), str(display["delta"])))
 				else:
 					display["window"].setTitle("%s (each %s)" % (stat, str(display["delta"])))
@@ -370,7 +370,7 @@ def update_display(displays, offset):
 						data.append({ "data":(count,key), "attr": 0 })
 				display["window"].setList(data, "%16s  %s")
 			else:
-				if "re" in display:
+				if display.get("re"):
 					display["window"].setTitle("%s / %s (last %s)" % (stat, display.get("re"), str(display["delta"])))
 				else:
 					display["window"].setTitle("%s (last %s)" % (stat, str(display["delta"])))
