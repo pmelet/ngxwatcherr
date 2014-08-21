@@ -22,9 +22,8 @@ def follow(thefile, sleep=1, after=None, before=None):
 			yield line
 
 
-
-ERRORS_RE = '^(.*) \[(.*)\] ([0-9#]+): ([0-9*]+) (.*)'
-BASE_STAT = "error"
+def sum_dict(d, u):
+	for k,v in u.iteritems(): d[k] += v
 
 class AllStats(object):
 	def __init__(self):
@@ -54,14 +53,23 @@ class Stats(object):
 		self.data[key].append(time)
 		self.last_keys.add(key)
 
-	def last(self, delta=None, offset=None, max=None):
+	def last(self, delta=None, offset=None, max=None, vfilter=None):
 		keys = filter(operator.itemgetter(1), 
-			          sorted([(key,value.last(delta,offset)) for key,value in self.data.iteritems()], 
+			          sorted([(key,value.last(delta,offset)) for key,value in self.data.iteritems() 
+			          	                                     if vfilter is None or re.search(vfilter,key) is not None], 
 			          	     key=operator.itemgetter(1), 
 			          	     reverse=True))
 		if max:
 			return keys[:max]
 		return keys
+
+	def group(self, delta, offset=None, max=None, vfilter=None):
+		stat = defaultdict(lambda:0)
+		for key,value in self.data.iteritems():
+			if vfilter is None or re.search(vfilter,key) is not None:
+				vstat = value.group(delta=delta, offset=offset)
+				sum_dict(stat,vstat)
+		return sorted([(v,delta*k) for k,v in stat.iteritems()], key=operator.itemgetter(1))	
 
 	def clear(self):
 		self.last_keys = set()
@@ -93,9 +101,24 @@ class Stat(object):
 			count += 1	
 		return count
 
+	def group(self, delta, offset=None):
+		res = defaultdict(lambda:0)
+		gr = delta.total_seconds()
+		now = datetime.now()
+		if offset:
+			now = now - offset
+		for time in reversed(self.data):
+			d = (now-time).total_seconds()
+			#print >>sys.stderr, time, now, d, d // gr
+			res[int(d//gr)] += 1
+		return res
+
 	def __len__(self):
 		return len(self.data)
 
+
+ERRORS_RE = '^(.*) \[(.*)\] ([0-9#]+): ([0-9*]+) (.*)'
+BASE_STAT = "error"
 
 errors_stats = AllStats()
 
@@ -298,24 +321,41 @@ def close_display(signal=None, frame=None, error=None):
 	curses.nocbreak()
 	curses.echo()
 	curses.endwin()
-	print >>sys.stderr, error
+	if error:
+		print >>sys.stderr, error.message
+		import traceback
+		traceback.print_exc(file=sys.stderr)
 	print >>sys.stderr, "\n".join(errors_stats.keys())
 	sys.exit(0)
 
 
 def update_display(displays, offset):
 	for display in displays:
-		stat = display["stat"]	
+		stat = display["stat"]
+		stat_type = display.get("type")
 		data = []
 		stats = errors_stats[stat]
-		for (key,count) in stats.last(delta=display["delta"], 
-                                      offset=offset, 
-                                      max=display["window"].viewport_height):
-			data.append({ "data":(count,key), 
-				          "attr": curses.A_BOLD if stats.is_recent(key) else 0 })
-		display["window"].setTitle("%s (last %s)" % (stat, str(display["delta"])))
-		display["window"].setList(data, "%3d %s")
-
+		if stats:
+			if stat_type == 'histogram':
+				display["window"].setTitle("%s (each %s)" % (stat, str(display["delta"])))
+				groups = stats.group(delta=display["delta"], 
+					                           vfilter=display.get("re"), 
+		                                       offset=offset, 
+		                                       max=display["window"].viewport_height)
+				if groups:
+					for (key,count) in groups:
+						data.append({ "data":(count,key), "attr": 0 })
+				display["window"].setList(data, "%s %s")
+			else:
+				display["window"].setTitle("%s (last %s)" % (stat, str(display["delta"])))
+				for (key,count) in stats.last(delta=display["delta"], 
+					                          vfilter=display.get("re"), 
+		                                      offset=offset, 
+		                                      max=display["window"].viewport_height):
+					data.append({ "data":(count,key), 
+						          "attr": curses.A_BOLD if stats.is_recent(key) else 0 })
+				display["window"].setList(data, "%3d %s")
+		
 
 def new_data_arrived():
 	errors_stats.clear()
@@ -331,6 +371,54 @@ def open_file(f, displays, sleep, offset):
 
 		add_stats(pline[0], datetime.strptime(time,"%Y/%m/%d %H:%M:%S"), options)
 
+timedesc = [
+	{ "re" : "([-+0-9]+)s[a-z]*", "number": 1, "arg": "seconds" },
+	{ "re" : "([-+0-9]+)m[a-z]*", "number": 1, "arg": "minutes" },
+	{ "re" : "([-+0-9]+)h[a-z]*", "number": 1, "arg": "hours" },
+	{ "re" : "([-+0-9]+)d[a-z]*", "number": 1, "arg": "days" },
+	{ "re" : "([-+0-9]+)", "number": 1, "arg": "hours" },
+]
+
+def get_time_delta( timestr ):
+	for desc in timedesc:
+		match = re.match(desc["re"], timestr)
+		if match:
+			timedelta_args = { desc["arg"]: int(match.group(desc["number"])) }
+			return timedelta(**timedelta_args)
+
+
+def parse_arguments(args):
+	displays = []
+	for metric in args.metrics:
+		t = re.split("[:/]",metric)
+		tp = "histogram" if '/' in metric else "list"
+		if len(t) == 3:
+			m, r, s = t
+		elif len(t) == 2:
+			(m, s), r = t, None
+		#print t, m, s, r, tp
+		delta = get_time_delta(s)
+		if delta is not None:
+			displays.append( { "delta": delta, "stat": m, "re": r, "type": tp } )
+		else:
+			print >>sys.stderr, "Metric '%s' cannot be parsed" % (metric)
+
+	offset = None
+	if args.offset:
+		offset = get_time_delta(args.offset)
+
+	period = 1
+	if args.period:
+		period = max(args.period, period)
+
+	filename = None
+	if args.filename and os.path.exists(args.filename):
+		filename = args.filename
+	else:
+		print >>sys.stderr, "File", args.filename, "does not exist"
+
+	return displays, filename, period, offset
+
 if __name__ == '__main__':
 
 	import argparse
@@ -339,49 +427,42 @@ if __name__ == '__main__':
 		                dest='filename', 
 		                action='store',
 	                    default="/var/log/nginx/error.log",
-	                    help='input file to parse')
-	parser.add_argument('--freq', '-s', 
-		                dest='freq', 
+	                    help='input file to parse. All are parsed, but only the last one is followed.')
+	parser.add_argument('--period', '-s', 
+		                dest='period', 
 		                action='store',
 	                    default="1",
+	                    type=int,
 	                    help='refresh time')
+	parser.add_argument('--offset', '-t', 
+		                dest='offset', 
+		                action='store',
+	                    default="0",
+	                    help='time difference with log file (positive if logs are in the past; negative if logs are in the future). For negative time, use --offset=-2h')
+	
 	parser.add_argument('metrics', 
-		                metavar='metric:time', 
+		                metavar='metric', 
 		                type=str, 
 		                nargs='+',
-                        help='specification of the metric(s) to follow')
+                        help='''specification of the metric(s) to follow. 
+                                Valid forms: metric:spec metric:re:spec metric/spec metric/re/spec. 
+                                If separator is :, stat is the list of values for the metric within the time;
+                                if separator is /, stat is the list of values grouped by time;
+                                "metric" is typically "error", "request", "client".
+                                "re" is a filter on the value of the metric (ex: "timeout") but is optional.
+                                "spec" is a time (1m, 10m, 1h), and is the time range or granularity of the stat''')
+
 	args = parser.parse_args()
 
-	
-	displays = []
-	timedesc = [
-		{ "re" : "([0-9]+)s[a-z]*", "number": 1, "arg": "seconds" },
-		{ "re" : "([0-9]+)m[a-z]*", "number": 1, "arg": "minutes" },
-		{ "re" : "([0-9]+)h[a-z]*", "number": 1, "arg": "hours" },
-		{ "re" : "([0-9]+)d[a-z]*", "number": 1, "arg": "days" },
-	]
-	for metric in args.metrics:
-		m, s = metric.split(":")
-		ok = False
-		for desc in timedesc:
-			match = re.match(desc["re"], s)
-			if match:
-				timedelta_args = { desc["arg"]: int(match.group(desc["number"])) }
-				displays.append( { "delta": timedelta(**timedelta_args), "stat": m } )
-				ok = True
-				break
-		if not ok:
-			print >>sys.stderr, "Metric '%s' cannot be parsed" % (metric)
+	displays, filename, period, offset = parse_arguments(args)
+	print >>sys.stderr, filename, period, offset
 
-	if args.filename:
-		if os.path.exists(args.filename):
-			init_display(displays)
-			try:	
-				offset = timedelta(hours=0)
-				errors = open(args.filename)
-				open_file(errors, displays, 0.5, offset)
-			except Exception as e:
-				close_display(error=e)
-		else:
-			print >>sys.stderr, "File", args.filename, "does not exist"
+	if filename:
+		init_display(displays)
+		try:	
+			errors = open(args.filename)
+			open_file(errors, displays, period, offset)
+		except Exception as e:
+			close_display(error=e)
+
 
