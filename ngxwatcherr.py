@@ -345,7 +345,10 @@ def update_display(displays, offset):
 		stats = errors_stats[stat]
 		if stats:
 			if stat_type == 'histogram':
-				display["window"].setTitle("%s (each %s)" % (stat, str(display["delta"])))
+				if "re" in display:
+					display["window"].setTitle("%s / %s (each %s)" % (stat, display.get("re"), str(display["delta"])))
+				else:
+					display["window"].setTitle("%s (each %s)" % (stat, str(display["delta"])))
 				groups = stats.group(delta=display["delta"], 
 					                           vfilter=display.get("re"), 
 		                                       offset=offset, 
@@ -355,7 +358,11 @@ def update_display(displays, offset):
 						data.append({ "data":(count,key), "attr": 0 })
 				display["window"].setList(data, "%16s  %s")
 			else:
-				display["window"].setTitle("%s (last %s)" % (stat, str(display["delta"])))
+				if "re" in display:
+					display["window"].setTitle("%s / %s (last %s)" % (stat, display.get("re"), str(display["delta"])))
+				else:
+					display["window"].setTitle("%s (last %s)" % (stat, str(display["delta"])))
+					
 				for (key,count) in stats.last(delta=display["delta"], 
 					                          vfilter=display.get("re"), 
 		                                      offset=offset, 
