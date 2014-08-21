@@ -299,6 +299,8 @@ class Window(object):
 		if len(string) > self.viewport_width:
 			x = self.viewport_width//3
 			string = string[:x]+"..."+string[-2*x:]
+		if len(string) < self.viewport_width:
+			string += ' '*(self.viewport_width-len(string))
 		self.window.addnstr(row,
 			                1,
 			                string, 
