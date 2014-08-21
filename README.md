@@ -31,4 +31,4 @@ If separator is /, stat is the list of values grouped by time. For instance, err
 | `--period PERIOD -s PERIOD`    | refresh time (in seconds)                                                         |
 | `--offset OFFSET -t OFFSET`    | time difference with log file (positive if logs are in the past; negative if logs are in the future). For negative time, use --offset=-2h |
 
-(https://raw.githubusercontent.com/pmelet/ngxwatcherr/master/ngxwatcherr.png)
+![Screenshot](https://raw.githubusercontent.com/pmelet/ngxwatcherr/master/ngxwatcherr.png)
