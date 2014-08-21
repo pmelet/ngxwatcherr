@@ -276,22 +276,34 @@ class Window(object):
 				         curses.A_REVERSE)
 		if self.data:
 			for i,data in enumerate(self.data[:self.viewport_height]):
-				self.window.addnstr(i + self.vertical_offset + 1,
-					                1,
-					                self.format % (data.get("data")), 
-					                self.viewport_width, 
-					                data.get("attr"))
+				#self.window.addnstr(i + self.vertical_offset + 1,
+				#	                1,
+				#	                self.format % (data.get("data")), 
+				#	                self.viewport_width, 
+				#	                data.get("attr"))
+				self._cut(self.format % (data.get("data")),
+				          i + self.vertical_offset + 1, 
+					       data.get("attr"))
 		self.window.refresh()
 	
-	def _center(self, str, row, attr=None):
+	def _center(self, string, row, attr=None):
 		tab = (self.viewport_width - len(self.title)) // 2
-		title = "%s%s%s" % (' '*tab, self.title, ' '*(self.viewport_width-len(self.title)-tab))
+		title = "%s%s%s" % (' '*tab, string, ' '*(self.viewport_width-len(self.title)-tab))
 		self.window.addnstr(row, 
 			                1, 
 			                title, 
 			                self.viewport_width, 
 			                attr)
 
+	def _cut(self, string, row, attr=None):
+		if len(string) > self.viewport_width:
+			x = self.viewport_width//3
+			string = string[:x]+"..."+string[-2*x:]
+		self.window.addnstr(row,
+			                1,
+			                string, 
+			                self.viewport_width, 
+			                attr)
 	def setTitle(self, title):
 		self.title = title
 		self.display()
