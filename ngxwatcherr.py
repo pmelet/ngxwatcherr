@@ -23,7 +23,11 @@ def follow(thefile, sleep=1, after=None, before=None):
 
 
 def sum_dict(d, u):
-	for k,v in u.iteritems(): d[k] += v
+	maxkey = 0
+	for k,v in u.iteritems(): 
+		maxkey = max(maxkey,k)
+		d[k] += v
+	return maxkey
 
 class AllStats(object):
 	def __init__(self):
@@ -65,10 +69,14 @@ class Stats(object):
 
 	def group(self, delta, offset=None, max=None, vfilter=None):
 		stat = defaultdict(lambda:0)
+		maxkey = 0
 		for key,value in self.data.iteritems():
 			if vfilter is None or re.search(vfilter,key) is not None:
 				vstat = value.group(delta=delta, offset=offset)
-				sum_dict(stat,vstat)
+				maxkey = sum_dict(stat,vstat)
+		for i in range(maxkey):
+			stat[i] += 0 #trick
+
 		return sorted([(v,delta*k) for k,v in stat.iteritems()], key=operator.itemgetter(1))	
 
 	def clear(self):
@@ -345,7 +353,7 @@ def update_display(displays, offset):
 				if groups:
 					for (key,count) in groups:
 						data.append({ "data":(count,key), "attr": 0 })
-				display["window"].setList(data, "%s %s")
+				display["window"].setList(data, "%16s  %s")
 			else:
 				display["window"].setTitle("%s (last %s)" % (stat, str(display["delta"])))
 				for (key,count) in stats.last(delta=display["delta"], 
@@ -354,7 +362,7 @@ def update_display(displays, offset):
 		                                      max=display["window"].viewport_height):
 					data.append({ "data":(count,key), 
 						          "attr": curses.A_BOLD if stats.is_recent(key) else 0 })
-				display["window"].setList(data, "%3d %s")
+				display["window"].setList(data, "%3d  %s")
 		
 
 def new_data_arrived():
